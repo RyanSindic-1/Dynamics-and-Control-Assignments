@@ -1,112 +1,181 @@
-% MATLAB Script for Deliverable 1 (e, f, g) - Using Numerical Integration
+%% Reaction Wheel Pendulum Simulation and Comparison
+% This script computes the EoMs, simulates the system, and compares the results with measured signals.
 
-% Clear workspace and set up symbolic variables
-clear; clc; close all;
+% Clear workspace and command window
+clear; clc;
 
-% Define system parameters (replace with actual values)
-g = 9.81;       % Gravitational acceleration (m/s^2)
-mp = 1.0;       % Pendulum arm mass (kg)
-mw = 0.2;       % Reaction wheel mass (kg)
-Jp = 0.083;     % Pendulum arm moment of inertia (kg*m^2)
-Jw = 0.1;       % Reaction wheel moment of inertia (kg*m^2)
-lp = 0.5;       % Pendulum arm center of mass distance (m)
-lw = 0.2;       % Reaction wheel center of mass distance (m)
-dtheta = 0.1;   % Pendulum damping coefficient (Nms/rad)
-dphi = 0.2;     % Reaction wheel damping coefficient (Nms/rad)
-ktheta = 6.558; % Pendulum spring constant (Nm/rad)
-kphi = 0.114;   % Reaction wheel spring constant (Nm/rad)
-thetaref = pi/2; % Resting angle for pendulum spring (rad)
-phiref = pi/2;   % Resting angle for reaction wheel spring (rad)
 
-% Define torque input and prescribed displacement
-tau = @(t) sin(t) / 2; % Torque input (Nm)
-spd = @(t) sin(2*t) / 5 + 0.5; % Prescribed displacement (m)
 
-% Define initial conditions
-theta_0 = pi/2;    % Initial angle of pendulum (rad)
-phi_0 = pi/2;      % Initial angle of reaction wheel (rad)
-theta_dot_0 = 0;   % Initial angular velocity of pendulum (rad/s)
-phi_dot_0 = 0;     % Initial angular velocity of reaction wheel (rad/s)
-initial_conditions = [theta_0; phi_0; theta_dot_0; phi_dot_0];
+% Define system parameters
+g = 9.81;          % Gravitational acceleration (m/s^2)
+lp = 0.5;          % Pendulum arm center of mass distance to point A (m)
+lw = 1;            % Reaction wheel center of mass distance to point A (m)
+mp = 1;            % Mass of the pendulum arm (kg)
+mw = 0.2;          % Mass of the reaction wheel and the motor (kg)
+Jp = 0.083;        % Rotational inertia of the pendulum arm w.r.t. its center of mass (kg·m^2)
+Jw = 0.1;          % Rotational inertia of the reaction wheel w.r.t. its center of mass (kg·m^2)
+dtheta = 0.1;      % Rotational damping coefficient of the pendulum arm (N·m·s/rad)
+dphi = 0.2;        % Rotational damping coefficient of the wheel (N·m·s/rad)
+ktheta = 6.558;    % Rotational spring coefficient of the pendulum arm (N·m/rad)
+kphi = 0.114;      % Rotational spring coefficient of the wheel (N·m/rad)
+theta_ref = pi/2;  % Resting position of the pendulum arm spring (rad)
+phi_ref = pi/2;    % Resting position of the wheel spring (rad)
 
-% Define simulation time span
-tspan = [0, 200]; % Time range (seconds)
+% Pack parameters into a struct
+params = struct('g', g, 'lp', lp, 'lw', lw, 'mp', mp, 'mw', mw, ...
+                'Jp', Jp, 'Jw', Jw, 'dtheta', dtheta, 'dphi', dphi, ...
+                'ktheta', ktheta, 'kphi', kphi, 'theta_ref', theta_ref, ...
+                'phi_ref', phi_ref);
 
-% Equations of Motion (Numerical)
-function dqdt = eom(t, q, g, mp, mw, Jp, Jw, lp, lw, dtheta, dphi, ktheta, kphi, thetaref, phiref, tau, spd)
-    % States
-    theta = q(1);      % Pendulum angle
-    phi = q(2);        % Reaction wheel angle
-    theta_dot = q(3);  % Pendulum angular velocity
-    phi_dot = q(4);    % Reaction wheel angular velocity
+% Define the Equations of Motion (EoMs) as a function
+function dqdt = RWP_EOM(t, q, params)
+    % Unpack parameters
+    g = params.g;
+    lp = params.lp;
+    lw = params.lw;
+    mp = params.mp;
+    mw = params.mw;
+    Jp = params.Jp;
+    Jw = params.Jw;
+    dtheta = params.dtheta;
+    dphi = params.dphi;
+    ktheta = params.ktheta;
+    kphi = params.kphi;
+    theta_ref = params.theta_ref;
+    phi_ref = params.phi_ref;
 
-    % Torques and forces
-    tau_input = tau(t);
-    spd_input = spd(t);
+    % Unpack state variables
+    theta = q(1);       % Angle θ(t)
+    phi = q(2);         % Angle ϕ(t)
+    theta_dot = q(3);   % Angular velocity θ̇(t)
+    phi_dot = q(4);     % Angular velocity ϕ̇(t)
 
-    % Equations of Motion
-    theta_ddot = -(dtheta * theta_dot + ktheta * (theta - thetaref) + mp * g * lp * sin(theta) + mw * g * lw * sin(theta)) / Jp ...
-                 + tau_input / Jp;
+    % Define inputs
+    tau = (1/2) * sin(t);            % External applied torque τ(t)
+    spd = (1/2) + (1/5) * sin(2*t);  % Prescribed displacement x(t)
+    % Note: spd(t) is not directly used in this EoM as the cart is massless
 
-    phi_ddot = -(dphi * phi_dot + kphi * (phi - phiref) - tau_input) / Jw;
+    % Compute the mass matrix M(q)
+    M11 = Jp + mp * lp^2 + Jw + mw * lw^2;  % M(1,1) element
+    M12 = -Jw;                              % M(1,2) element
+    M21 = -Jw;                              % M(2,1) element
+    M22 = Jw;                               % M(2,2) element
 
-    % Return derivatives
-    dqdt = [theta_dot; phi_dot; theta_ddot; phi_ddot];
+    % Assemble the mass matrix M
+    M = [M11, M12;
+         M21, M22];
+
+    % Compute the generalized forces F(q, q_dot, t)
+    F1 = -mp * g * lp * sin(theta) - mw * g * lw * sin(theta) ... % Gravitational forces
+         - dtheta * theta_dot ...                                  % Damping on θ
+         - ktheta * (theta - theta_ref);                           % Spring force on θ
+
+    F2 = tau ...                                                   % External torque τ(t)
+         - dphi * (phi_dot - theta_dot) ...                        % Damping between ϕ and θ
+         - kphi * (phi - phi_ref);                                 % Spring force on ϕ
+
+    % Compute the accelerations q̈
+    q_ddot = M \ [F1; F2];
+
+    % Assemble the derivatives dqdt
+    dqdt = [theta_dot;             % θ̇(t)
+            phi_dot;               % ϕ̇(t)
+            q_ddot(1);             % θ̈(t)
+            q_ddot(2)];            % ϕ̈(t)
 end
 
-% Solve ODEs
-[t, sol] = ode45(@(t, q) eom(t, q, g, mp, mw, Jp, Jw, lp, lw, dtheta, dphi, ktheta, kphi, thetaref, phiref, tau, spd), ...
-                 tspan, initial_conditions);
+%% Question f) - Simulate the System
 
-% Extract solutions
-simulated_time = t;
-simulated_theta = sol(:, 1); % Theta (pendulum angle)
-simulated_phi = sol(:, 2);   % Phi (reaction wheel angle)
+% Define initial conditions
+theta0 = pi/2;  % Initial angle θ(0) = π/2 rad
+phi0 = pi/2;    % Initial angle ϕ(0) = π/2 rad
+theta_dot0 = 0; % Initial angular velocity θ̇(0) = 0 rad/s
+phi_dot0 = 0;   % Initial angular velocity ϕ̇(0) = 0 rad/s
 
-%% Plot Results
-% Plot theta(t)
+% Combine initial conditions into a vector q0
+q0 = [theta0; phi0; theta_dot0; phi_dot0];
+
+% Define simulation time span
+t_start = 0;     % Start time (s)
+t_end = 200;     % End time (s)
+tspan = [t_start, t_end];  % Time interval for simulation
+
+% Solve the system of ODEs using ode45 solver
+[t, q] = ode45(@(t, q) RWP_EOM(t, q, params), tspan, q0);
+
+% Extract the angles θ(t) and ϕ(t) from the solution q
+theta = q(:, 1);  % Angle θ(t)
+phi = q(:, 2);    % Angle ϕ(t)
+
+% Plot the angle θ(t) over time
 figure;
-plot(simulated_time, simulated_theta, 'b', 'LineWidth', 1.5); hold on;
+plot(t, theta, 'b', 'LineWidth', 1.5);
+title('Angle \theta(t) vs Time');
 xlabel('Time (s)');
-ylabel('\theta (rad)');
-title('Simulated \theta(t) (Pendulum Angle)');
+ylabel('\theta(t) (rad)');
+xlim([0, 200]);
+ylim([-0.156, 3.27]);
 grid on;
+legend('\theta(t)');
 
-% Plot phi(t)
+% Plot the angle ϕ(t) over time
 figure;
-plot(simulated_time, simulated_phi, 'r', 'LineWidth', 1.5); hold on;
+plot(t, phi, 'r', 'LineWidth', 1.5);
+title('Angle \phi(t) vs Time');
 xlabel('Time (s)');
-ylabel('\phi (rad)');
-title('Simulated \phi(t) (Reaction Wheel Angle)');
+ylabel('\phi(t) (rad)');
+xlim([0, 200]);
+ylim([-2.303, 4.37]);
 grid on;
+legend('\phi(t)');
 
-%% g) Comparison with Measured Data
-% Load measured signals
-load('MeasuredSignals.mat'); % Ensure the file is in the working directory
+%% Question g) - Compare Simulated Outputs with Measured Signals
 
-% Extract data from the structure
-time_meas = MeasuredSignals.t;        % Time vector
-theta_meas = MeasuredSignals.theta;  % Pendulum angle
-phi_meas = MeasuredSignals.varphi;   % Reaction wheel angle
+% Load the provided measured signals
+load('MeasuredSignals.mat');  % Ensure 'MeasuredSignals.mat' is in the current directory
 
-% Overlay simulated and measured theta(t)
-figure;
-plot(simulated_time, simulated_theta, 'b', 'LineWidth', 1.5); hold on;
-plot(time_meas, theta_meas, 'r--', 'LineWidth', 1.5);
-xlabel('Time (s)');
-ylabel('\theta (rad)');
-legend('Simulated \theta', 'Measured \theta');
-title('Comparison of Simulated and Measured \theta');
-grid on;
+% Check available fields in MeasuredSignals
+availableFields = fieldnames(MeasuredSignals);
 
-% Overlay simulated and measured phi(t)
-figure;
-plot(simulated_time, simulated_phi, 'b', 'LineWidth', 1.5); hold on;
-plot(time_meas, phi_meas, 'r--', 'LineWidth', 1.5);
-xlabel('Time (s)');
-ylabel('\phi (rad)');
-legend('Simulated \phi', 'Measured \varphi');
-title('Comparison of Simulated and Measured \phi');
-grid on;
+% Compare θ(t) if available
+if ismember('theta', availableFields)
+    figure;
+    plot(t, theta, 'b', 'LineWidth', 1.5);
+    hold on;
+    plot(MeasuredSignals.t, MeasuredSignals.theta, 'r--', 'LineWidth', 1.5);
+    title('Comparison of \theta(t)');
+    xlabel('Time (s)');
+    ylabel('\theta(t) (rad)');
+    xlim([0, 200]);
+    ylim([-0.156, 3.27]);
+    grid on;
+    legend('Simulated \theta(t)', 'Measured \theta(t)');
+    hold off;
+else
+    warning('Measured \theta(t) data not available.');
+end
 
+% Compare ϕ(t) if available
+if ismember('varphi', availableFields)
+    figure;
+    plot(t, phi, 'b', 'LineWidth', 1.5);  % Plot simulated ϕ(t)
+    hold on;
+    plot(MeasuredSignals.t, MeasuredSignals.varphi, 'r--', 'LineWidth', 1.5);  % Use MeasuredSignals.varphi
+    title('Comparison of \phi(t)');
+    xlabel('Time (s)');
+    ylabel('\phi(t) (rad)');
+    xlim([0, 200]);
+    ylim([-2.303, 4.37]);
+    grid on;
+    legend('Simulated \phi(t)', 'Measured \phi(t)');
+    hold off;
+else
+    warning('Measured \phi(t) data not available.');
+end
 
+% Analyze differences between simulated and measured data
+% Potential reasons for discrepancies:
+% - Modeling assumptions and simplifications
+% - Parameter estimation errors
+% - Measurement noise or inaccuracies
+% - Unmodeled effects such as friction or external disturbances
