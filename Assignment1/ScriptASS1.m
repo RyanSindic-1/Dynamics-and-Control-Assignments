@@ -135,7 +135,7 @@ legend('\phi(t)');
 load('MeasuredSignals.mat');  % Ensure 'MeasuredSignals.mat' is in the current directory
 
 % Check available fields in MeasuredSignals
-availableFields = fieldnames(MeasuredSignals);
+availableFields = fieldnames(MeasuredSignals)
 
 % Compare θ(t) if available
 if ismember('theta', availableFields)
