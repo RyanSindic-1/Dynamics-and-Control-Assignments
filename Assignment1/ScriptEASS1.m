@@ -57,8 +57,8 @@ T = simplify(T_pendulum + T_wheel);
 %% c) Compute the potential energy V
 
 % Potential energy due to gravity
-V_pendulum = mp * g * r3(2);
-V_wheel = mw * g * r2(2);
+V_pendulum = mp * g * lp * sin(theta);
+V_wheel = mw * g * lw * sin(theta) ;
 
 % Potential energy due to springs
 V_spring_theta = (1/2) * ktheta * (theta(t) - theta_ref)^2;
@@ -66,6 +66,7 @@ V_spring_phi = (1/2) * kphi * (phi(t) - phi_ref)^2;
 
 % Total potential energy
 V = V_pendulum + V_wheel + V_spring_theta + V_spring_phi;
+V= simplify(V);
 
 %% d) Compute the generalized forces Q_nc
 
